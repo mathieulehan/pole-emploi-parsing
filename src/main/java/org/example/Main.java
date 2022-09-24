@@ -8,6 +8,8 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.UpdateOptions;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
@@ -39,6 +41,10 @@ import java.security.cert.X509Certificate;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
+import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Updates.combine;
+import static com.mongodb.client.model.Updates.set;
 
 public class Main {
 
@@ -81,11 +87,13 @@ public class Main {
             try {
                 System.out.println("Connected successfully to server.");
 
-                HttpStatus latestHttpCodeReceived = null;
-                int page = 0;
-                while (!OK.equals(latestHttpCodeReceived)) {
+                int minRange = 1000;
+                int maxRange = 1149;
+                while (minRange > 0) {
                     initHeadersGet();
-                    latestHttpCodeReceived = getOffres(token);
+                    getOffres(minRange, maxRange);
+                    minRange = minRange - 150;
+                    maxRange = maxRange - 150;
                 }
 
             } catch (MongoException me) {
@@ -143,14 +151,13 @@ public class Main {
     }
 
     // while http 206 on continue d'appeler
-    private static HttpStatus getOffres(String token) {
+    private static HttpStatus getOffres(int minRange, int maxRange) {
         // request body
         MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
-        // map.add("grant_type", grant_type);
-
+        System.out.println("Getting range : " + minRange + "-" + maxRange);
         HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(map, headersGet);
 
-        ResponseEntity<String> response = restTemplate.exchange(api_url_offres, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(api_url_offres + "?range=" + minRange + "-" + maxRange, HttpMethod.GET, entity, String.class);
         DocumentContext jsonContext = JsonPath.parse(response.getBody());
         JSONArray jsonArray = jsonContext.read("resultats");
         for (Object offre : jsonArray) {
@@ -160,13 +167,16 @@ public class Main {
     }
 
     private static void parseAndSaveOffre(Map offre) {
-        MongoCollection<BasicDBObject> collection = database.getCollection("offres", BasicDBObject.class);
+        MongoCollection<Document> collection = database.getCollection("offres", Document.class);
         String intitule = (String) offre.get("intitule");
         System.out.println("Saving offer : " + intitule);
         // set _id to allow updates
         offre.put("_id", offre.get("id"));
         offre.remove("id");
-        collection.insertOne(new BasicDBObject(offre));
+        collection.replaceOne(
+                eq("_id", offre.get("_id")),
+                new Document(offre),
+                new ReplaceOptions().upsert(true).bypassDocumentValidation(true));
     }
 
 }
