@@ -2,24 +2,18 @@ package org.example;
 
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
-import com.mongodb.BasicDBObject;
 import com.mongodb.MongoException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.ReplaceOptions;
-import com.mongodb.client.model.UpdateOptions;
 import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustStrategy;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.bson.BsonDocument;
-import org.bson.BsonInt64;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -44,9 +38,8 @@ import java.util.Set;
 
 import static com.mongodb.client.model.Filters.eq;
 import static com.mongodb.client.model.Updates.combine;
-import static com.mongodb.client.model.Updates.set;
 
-public class Main {
+public class OffreCollector {
 
     // http codes
     private static final String OK = "200";
@@ -69,7 +62,15 @@ public class Main {
     private static RestTemplate restTemplate = new RestTemplate();
     private static MongoDatabase database;
 
-    public static void main(String[] args) throws KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+    public static void main(Set<String> cities) throws KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+        if (cities.isEmpty()) {
+            // Rennes
+            cities.add("35238");
+            // Bordeaux
+            cities.add("33063");
+            // Paris (on donne 1 arrondissement pour avoir toutes les offres)
+            cities.add("75101");
+        }
         // Init parameters
         initHeadersPost();
         // Init restTemplate
@@ -87,15 +88,17 @@ public class Main {
             try {
                 System.out.println("Connected successfully to server.");
 
-                int minRange = 1000;
-                int maxRange = 1149;
-                while (minRange > 0) {
-                    initHeadersGet();
-                    getOffres(minRange, maxRange);
-                    minRange = minRange - 150;
-                    maxRange = maxRange - 150;
-                }
 
+                for (String city : cities) {
+                    int minRange = 1000;
+                    int maxRange = 1149;
+                    while (minRange > 0) {
+                        initHeadersGet();
+                        getOffresForCityWithRange(city, minRange, maxRange);
+                        minRange = minRange - 150;
+                        maxRange = maxRange - 150;
+                    }
+                }
             } catch (MongoException me) {
                 System.err.println("An error occurred while attempting to run a command: " + me);
             }
@@ -151,13 +154,13 @@ public class Main {
     }
 
     // while http 206 on continue d'appeler
-    private static HttpStatus getOffres(int minRange, int maxRange) {
+    private static HttpStatus getOffresForCityWithRange(String city, int minRange, int maxRange) {
         // request body
         MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
         System.out.println("Getting range : " + minRange + "-" + maxRange);
         HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(map, headersGet);
 
-        ResponseEntity<String> response = restTemplate.exchange(api_url_offres + "?range=" + minRange + "-" + maxRange, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(api_url_offres + "?commune=" + city + "&range=" + minRange + "-" + maxRange, HttpMethod.GET, entity, String.class);
         DocumentContext jsonContext = JsonPath.parse(response.getBody());
         JSONArray jsonArray = jsonContext.read("resultats");
         for (Object offre : jsonArray) {
